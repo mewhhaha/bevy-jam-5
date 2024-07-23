@@ -1,11 +1,16 @@
+# Credit
+
+https://roku6.itch.io/pixelfishes Fishes
+https://lintnaya.itch.io/pixel-hand-gesture-asset Hands
+
 # Bevy GitHub CI Template
 
 This repo show how to set up CI on a GitHub project for Bevy.
 
 It creates two workflows:
 
-* [CI](#CI)
-* [Release](#Release)
+- [CI](#CI)
+- [Release](#Release)
 
 ## CI
 
@@ -15,9 +20,9 @@ This workflow runs on every commit to `main` branch, and on every PR targeting t
 
 It will use rust stable on linux, with cache between different executions, those commands:
 
-* `cargo test`
-* `cargo clippy -- -D warnings`
-* `cargo fmt --all -- --check`
+- `cargo test`
+- `cargo clippy -- -D warnings`
+- `cargo fmt --all -- --check`
 
 If you are using anything OS specific or rust nightly, you should update the file [ci.yaml](./.github/workflows/ci.yaml) to use those.
 
@@ -28,9 +33,10 @@ Definition: [.github/workflows/release.yaml](./.github/workflows/release.yaml)
 This workflow runs on every tag.
 
 It will build:
-* For Linux and Windows, a .zip archive containing the executable and the `assets`.
-* For macOS, a dmg image with a .app containing the `assets`.
-* For wasm, a .zip archive with the wasm binary, the js bindings, an html file loading it, and the `assets`.
+
+- For Linux and Windows, a .zip archive containing the executable and the `assets`.
+- For macOS, a dmg image with a .app containing the `assets`.
+- For wasm, a .zip archive with the wasm binary, the js bindings, an html file loading it, and the `assets`.
 
 If you don't want to target some of those platforms, you can remove the corresponding job from the file [release.yaml](./.github/workflows/release.yaml).
 
@@ -47,7 +53,7 @@ You can follow [Managing releases in a repository](https://docs.github.com/en/re
 
 ### Git Tag from the CLI
 
-Execute the following commands: 
+Execute the following commands:
 
 ```sh
 git tag -a "my-game-1.0" -m "First official release"
@@ -58,8 +64,7 @@ git push --tags
 
 A new release will be available in GitHub, with the archives per platform available as downloadable assets.
 
-The `git` commands above produced this release: [my-game-1.0](
-https://github.com/bevyengine/bevy_github_ci_template/releases/tag/my-game-1.0).
+The `git` commands above produced this release: [my-game-1.0](https://github.com/bevyengine/bevy_github_ci_template/releases/tag/my-game-1.0).
 
 ## Using the workflows in your own project
 
@@ -69,7 +74,6 @@ If you would like to use the GitHub workflows included here for your own project
 2. Make sure that the env variable `binary` ([release.yaml](.github/workflows/release.yaml#L10)) matches the name of your binary
 3. Adapt the used toolchain if you are using nightly
 4. In your GitHub repo's settings, under `Actions -> General` make sure "Read and Write permissions" is selected under "Workflow permissions" near the bottom. This fixes the error `Error: Resource not accessible by integration`.
-
 
 ### Publish on itch.io
 
@@ -85,12 +89,12 @@ Once that is done, any tag pushed to GitHub will trigger an itch.io release and 
 
 Licensed under either of
 
-* Apache License, Version 2.0
-   ([LICENSE-APACHE-2.0](LICENSE-Apache-2.0) or <http://www.apache.org/licenses/LICENSE-2.0>)
-* MIT License
-   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
-* CC0-1.0 License
-   ([LICENSE-CC0-1.0](LICENSE-CC0-1.0) or <https://creativecommons.org/publicdomain/zero/1.0/legalcode>)
+- Apache License, Version 2.0
+  ([LICENSE-APACHE-2.0](LICENSE-Apache-2.0) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT License
+  ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+- CC0-1.0 License
+  ([LICENSE-CC0-1.0](LICENSE-CC0-1.0) or <https://creativecommons.org/publicdomain/zero/1.0/legalcode>)
 
 at your option.
 
