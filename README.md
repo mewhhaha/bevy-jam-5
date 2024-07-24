@@ -1,7 +1,6 @@
 # Credit
 
-https://roku6.itch.io/pixelfishes Fishes
-https://lintnaya.itch.io/pixel-hand-gesture-asset Hands
+Drew images using Excalidraw
 
 # Bevy GitHub CI Template
 

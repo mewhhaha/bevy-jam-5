@@ -3,6 +3,7 @@ use bevy::prelude::*;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Grab,
+    DebugShowCollisions,
 }
 
 struct ActionState {
@@ -23,17 +24,23 @@ impl ActionState {
     }
 }
 
-#[derive(Resource)]
-pub struct ActionInput([ActionState; 1]);
-
-impl Default for ActionInput {
-    fn default() -> Self {
-        Self([ActionState {
-            action: Action::Grab,
+impl Action {
+    fn state(self) -> ActionState {
+        ActionState {
+            action: self,
             pressed: false,
             just_pressed: false,
             just_released: false,
-        }])
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct ActionInput([ActionState; 2]);
+
+impl Default for ActionInput {
+    fn default() -> Self {
+        Self([Action::Grab.state(), Action::DebugShowCollisions.state()])
     }
 }
 
@@ -64,7 +71,10 @@ impl ActionInput {
 }
 
 fn read_input(buttons: Res<ButtonInput<KeyCode>>, mut action_input: ResMut<ActionInput>) {
-    let mappings = [(Action::Grab, KeyCode::Space)];
+    let mappings = [
+        (Action::Grab, KeyCode::Space),
+        (Action::DebugShowCollisions, KeyCode::KeyD),
+    ];
 
     let actions = mappings.map(|mapping| ActionState::read(mapping, &buttons));
     action_input.0 = actions;

@@ -4,12 +4,14 @@
 // Feel free to delete this line.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
-use std::{f32::consts::PI, time::Duration};
+use std::f32::consts::PI;
 
-use bevy::math::bounding::{Aabb2d, IntersectsVolume};
+use bevy::asset::AssetMetaCheck;
+use bevy::color::palettes::css::{GRAY, GREEN};
+use bevy::color::palettes::tailwind::{GREEN_100, GREEN_600};
+use bevy::math::bounding::{Aabb2d, Bounded2d, BoundingVolume, IntersectsVolume};
 use bevy::math::vec2;
 use bevy::prelude::*;
-use bevy::{asset::AssetMetaCheck, transform::commands};
 use input::{Action, ActionInput, InputMappingBundle};
 
 mod input;
@@ -17,89 +19,115 @@ mod input;
 #[derive(Component)]
 struct Holding(Option<Entity>);
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Progress(f32);
 
 #[derive(Component)]
 struct Radius(f32);
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Speed(f32);
-
-#[derive(Component)]
-struct Center(Vec2);
 
 #[derive(Component)]
 struct Active;
 
 #[derive(Component)]
-struct UnclenchTimer(Timer);
-
-#[derive(Component)]
 struct Item;
 
-fn system_setup(
-    mut commands: Commands,
-    asset_server: ResMut<AssetServer>,
-    mut config_store: ResMut<GizmoConfigStore>,
-    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-) {
+#[derive(Component, Clone)]
+struct Cycle;
+
+#[derive(Component, Clone)]
+struct Hand;
+
+#[derive(Bundle)]
+struct CycleBundle {
+    sprite_bundle: SpriteBundle,
+    radius: Radius,
+    cycle: Cycle,
+}
+
+impl CycleBundle {
+    fn new(texture: &Handle<Image>) -> Self {
+        Self {
+            cycle: Cycle,
+            sprite_bundle: SpriteBundle {
+                texture: texture.clone(),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(128.0)),
+                    ..default()
+                },
+                ..default()
+            },
+            radius: Radius(64.0),
+        }
+    }
+
+    fn radius(mut self, radius: f32) -> Self {
+        self.radius = Radius(radius);
+        self
+    }
+
+    fn translation(mut self, vec: Vec2) -> Self {
+        self.sprite_bundle.transform.translation = vec.extend(0.);
+        self
+    }
+}
+
+#[derive(Component, Clone)]
+enum Collision {
+    Rectangle(Rectangle),
+}
+
+fn system_setup(mut commands: Commands, asset_server: ResMut<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
 
-    let hand_open = asset_server.load::<Image>("hand-open.png");
-    commands.spawn((
-        Progress(0.0),
-        Speed(-0.5),
-        Radius(64.0),
-        Active,
-        Center(Vec2::ZERO),
-        SpriteBundle {
-            texture: hand_open.clone(),
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(64.0, 64.0)),
-                ..default()
-            },
-            ..default()
-        },
-    ));
-    commands.spawn((
+    let hand_open_image = asset_server.load::<Image>("hand-open.png");
+    let cycle_image = asset_server.load::<Image>("cycle.png");
+
+    let hand_bundle = (
+        Hand,
         Progress(0.5),
         Speed(-0.5),
-        Radius(60.0),
-        Center(vec2(128., 0.)),
+        Collision::Rectangle(Rectangle::new(32., 32.)),
         SpriteBundle {
-            texture: hand_open,
+            texture: hand_open_image,
             sprite: Sprite {
-                custom_size: Some(Vec2::new(64.0, 64.0)),
+                custom_size: Some(Vec2::splat(64.0)),
                 ..default()
             },
+            transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
             ..default()
         },
-    ));
+    );
 
-    let texture = asset_server.load("fishes.png");
-    let layout = TextureAtlasLayout::from_grid(UVec2::splat(32), 9, 8, None, None);
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+    commands
+        .spawn(CycleBundle::new(&cycle_image).translation(vec2(0., 0.)))
+        .with_children(|parent| {
+            parent.spawn((Active, hand_bundle.clone()));
+        });
+
+    commands
+        .spawn(CycleBundle::new(&cycle_image).translation(vec2(128., 0.)))
+        .with_children(|parent| {
+            parent.spawn(hand_bundle.clone());
+        });
+
+    let texture = asset_server.load("baton.png");
 
     commands.spawn((
         Item,
+        Collision::Rectangle(Rectangle::new(32., 32.)),
         SpriteBundle {
             texture,
             sprite: Sprite {
                 custom_size: Some(Vec2::new(64.0, 64.0)),
                 ..default()
             },
-            transform: Transform::from_translation(Vec3::new(-64., 0., 0.)),
+            transform: Transform::from_translation(Vec3::new(-64., 0., 1.)),
             ..default()
         },
-        TextureAtlas {
-            layout: texture_atlas_layout,
-            index: 0,
-        },
     ));
-
-    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
-    config.line_width = 6.0;
 }
 
 fn system_progress(mut query: Query<(&mut Progress, &Speed), With<Active>>, time: Res<Time>) {
@@ -111,45 +139,123 @@ fn system_progress(mut query: Query<(&mut Progress, &Speed), With<Active>>, time
     }
 }
 
-fn grab_toggle(
-    mut commands: Commands,
-    mut query: Query<(Entity, &Transform, &mut Handle<Image>), With<Active>>,
-    items: Query<(Entity, &Transform), With<Item>>,
+fn system_show_collision_gizmos(
+    mut show: Local<bool>,
     action_input: Res<ActionInput>,
-    asset_server: Res<AssetServer>,
+    mut gizmos: Gizmos,
+    query: Query<(&Transform, &Collision)>,
 ) {
-    if action_input.just_pressed(Action::Grab) {
-        let hand_open = asset_server.load::<Image>("hand-open.png");
-        let hand_closed = asset_server.load::<Image>("hand-closed.png");
+    if action_input.just_pressed(Action::DebugShowCollisions) {
+        *show = !*show;
+    }
 
-        for (entity, hand, mut sprite) in query.iter_mut() {
-            if sprite.id() != hand_open.id() {
-                *sprite = hand_open.clone();
-                commands.entity(entity).remove::<Holding>();
-            } else {
-                *sprite = hand_closed.clone();
-
-                let hand_aabb = Aabb2d::new(hand.translation.truncate(), Vec2::splat(32.));
-
-                let item = items.iter().find_map(|(entity, item)| {
-                    let item_aab = Aabb2d::new(item.translation.truncate(), Vec2::splat(32.));
-                    if hand_aabb.intersects(&item_aab) {
-                        println!("grabbed item");
-                        Some(entity)
-                    } else {
-                        println!("missed item");
-                        None
-                    }
-                });
-
-                commands.entity(entity).insert(Holding(item));
+    if !*show {
+        return;
+    }
+    for (transform, collision) in query.iter() {
+        let translation = transform.translation.xy();
+        let rotation = transform.rotation.to_euler(EulerRot::YXZ).2;
+        match collision {
+            Collision::Rectangle(rect) => {
+                gizmos.primitive_2d(rect, translation, rotation, GREEN_600)
             }
         }
     }
 }
 
-fn move_with_hand(
-    query: Query<(&Transform, &Holding), (With<Active>, Without<Item>)>,
+#[derive(PartialEq, Eq)]
+struct Overlap(Entity, Entity);
+
+impl Overlap {
+    fn new(e1: Entity, e2: Entity) -> Self {
+        if e1 < e2 {
+            Self(e1, e2)
+        } else {
+            Self(e2, e1)
+        }
+    }
+
+    fn overlaps(&self, e1: Entity, e2: Entity) -> bool {
+        let incoming = Overlap::new(e1, e2);
+        self == &incoming
+    }
+}
+
+#[derive(Resource, Default)]
+struct CurrentOverlap {
+    overlaps: Vec<Overlap>,
+}
+
+impl CurrentOverlap {
+    fn update(&mut self, overlaps: Vec<Overlap>) {
+        self.overlaps = overlaps;
+    }
+}
+
+fn rectangle_aabb(rect: &Rectangle, transform: &Transform) -> Aabb2d {
+    rect.aabb_2d(
+        transform.translation.truncate(),
+        transform.rotation.to_euler(EulerRot::YXZ).2,
+    )
+}
+
+fn system_check_overlap(
+    query: Query<(Entity, &Transform, &Collision)>,
+    mut current_overlap: ResMut<CurrentOverlap>,
+) {
+    let mut overlaps = vec![];
+
+    for [(e1, t1, c1), (e2, t2, c2)] in query.iter_combinations() {
+        match (c1, c2) {
+            (Collision::Rectangle(r1), Collision::Rectangle(r2)) => {
+                let aab1 = rectangle_aabb(r1, t1);
+                let aab2 = rectangle_aabb(r2, t2);
+                if aab1.intersects(&aab2) {
+                    overlaps.push(Overlap::new(e1, e2));
+                }
+            }
+        }
+    }
+
+    current_overlap.update(overlaps)
+}
+
+fn system_grab_toggle(
+    mut commands: Commands,
+    current_overlap: Res<CurrentOverlap>,
+    mut query: Query<(Entity, &Transform, Option<&Holding>), (With<Hand>, With<Active>)>,
+    items: Query<(Entity, &Transform), With<Item>>,
+    action_input: Res<ActionInput>,
+) {
+    if !action_input.just_pressed(Action::Grab) {
+        return;
+    }
+
+    let Some((entity, hand, holding)) = query.iter().next() else {
+        return;
+    };
+
+    if holding.is_some() {
+        commands.entity(entity).remove::<Holding>();
+        return;
+    } else {
+        let hand_aabb = Aabb2d::new(hand.translation.truncate(), Vec2::splat(32.));
+
+        let item = items.iter().find_map(|(entity, item)| {
+            let item_aab = Aabb2d::new(item.translation.truncate(), Vec2::splat(32.));
+            if hand_aabb.intersects(&item_aab) {
+                Some(entity)
+            } else {
+                None
+            }
+        });
+
+        commands.entity(entity).insert(Holding(item));
+    }
+}
+
+fn system_item_in_hand(
+    query: Query<(&Transform, &Holding), (With<Active>, With<Hand>, Without<Item>)>,
     mut items: Query<&mut Transform, With<Item>>,
 ) {
     for (hand, Holding(held)) in query.iter() {
@@ -161,7 +267,7 @@ fn move_with_hand(
             continue;
         };
 
-        item.translation = hand.translation.clone();
+        item.translation = hand.translation.truncate().extend(item.translation.z);
     }
 }
 
@@ -175,24 +281,6 @@ fn on_remove_grab(
     }
 }
 
-fn on_insert_grab(
-    trigger: Trigger<OnInsert, Holding>,
-    query: Query<&Holding>,
-    mut commands: Commands,
-) {
-    let mut entity = commands.entity(trigger.entity());
-    match query.get(trigger.entity()) {
-        Ok(Holding(Some(_))) => {
-            entity.remove::<UnclenchTimer>();
-        }
-        Ok(Holding(None)) => {
-            entity.insert(UnclenchTimer(Timer::from_seconds(0.3, TimerMode::Once)));
-        }
-        _ => {}
-    }
-    if let None = query.get(trigger.entity()).ok() {}
-}
-
 fn on_add_grab(
     trigger: Trigger<OnAdd, Holding>,
     asset_server: Res<AssetServer>,
@@ -203,34 +291,21 @@ fn on_add_grab(
     }
 }
 
-fn unclench_hand(
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut UnclenchTimer)>,
-    mut commands: Commands,
+fn system_cycle_hand(
+    mut query: Query<(&Children, &Radius), With<Cycle>>,
+    mut hands: Query<(&mut Transform, &Progress), With<Hand>>,
 ) {
-    for (entity, mut timer) in query.iter_mut() {
-        timer.0.tick(time.delta());
+    for (children, radius) in query.iter_mut() {
+        for child in children.iter() {
+            let Ok((mut hand, Progress(progress))) = hands.get_mut(*child) else {
+                continue;
+            };
 
-        if timer.0.finished() {
-            commands.entity(entity).remove::<(Holding, UnclenchTimer)>();
+            let angle = progress * 2. * PI;
+            let offset = Vec2::new(angle.cos(), angle.sin()) * radius.0;
+            hand.translation.x = offset.x;
+            hand.translation.y = offset.y;
         }
-    }
-}
-
-fn system_cycle_gizmo(
-    mut gizmos: Gizmos,
-    mut query: Query<(&Center, &Progress, &Speed, &Radius, &mut Transform)>,
-) {
-    for (Center(center), Progress(progress), Speed(speed), Radius(radius), mut transform) in
-        query.iter_mut()
-    {
-        transform.translation = Vec3::new(
-            center.x + radius * (progress * PI * 2.).cos(),
-            center.y + radius * (progress * PI * 2.).sin(),
-            0.0,
-        );
-
-        gizmos.circle_2d(*center, *radius, Color::WHITE);
     }
 }
 
@@ -254,15 +329,16 @@ fn main() {
             ..default()
         }))
         .add_plugins(InputMappingBundle)
+        .init_resource::<CurrentOverlap>()
         .add_systems(Startup, system_setup)
-        .add_systems(Update, system_cycle_gizmo)
+        .add_systems(PreUpdate, system_check_overlap)
+        .add_systems(Update, system_cycle_hand)
         .add_systems(Update, system_progress)
-        .add_systems(Update, system_grid_gizmo)
-        .add_systems(Update, grab_toggle)
-        .add_systems(Update, unclench_hand)
-        .add_systems(Update, move_with_hand)
+        .add_systems(PostUpdate, system_grid_gizmo)
+        .add_systems(Update, system_grab_toggle)
+        .add_systems(Update, system_item_in_hand)
+        .add_systems(Update, system_show_collision_gizmos)
         .observe(on_add_grab)
         .observe(on_remove_grab)
-        .observe(on_insert_grab)
         .run();
 }
