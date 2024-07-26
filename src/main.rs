@@ -7,16 +7,23 @@
 use std::f32::consts::PI;
 
 use bevy::asset::AssetMetaCheck;
-use bevy::color::palettes::css::{GRAY, GREEN};
-use bevy::color::palettes::tailwind::{GREEN_100, GREEN_600};
-use bevy::math::bounding::{Aabb2d, Bounded2d, BoundingVolume, IntersectsVolume};
-use bevy::math::vec2;
+use bevy::color::palettes::css::{BLACK, GRAY};
+use bevy::color::palettes::tailwind::GREEN_600;
+use bevy::math::bounding::{Aabb2d, Bounded2d, IntersectsVolume};
+use bevy::math::{vec2, VectorSpace};
 use bevy::prelude::*;
+use bevy::render::view::RenderLayers;
 use input::{Action, ActionInput, InputMappingBundle};
 
 mod input;
 
-#[derive(Component)]
+const LAYER_ACTIVE: usize = 1;
+const LAYER_INACTIVE: usize = 0;
+
+const TINT_ACTIVE: Color = Color::WHITE;
+const TINT_INACTIVE: Color = Color::Srgba(GRAY);
+
+#[derive(Component, Clone)]
 struct Holding(Option<Entity>);
 
 #[derive(Component, Clone)]
@@ -45,6 +52,7 @@ struct CycleBundle {
     sprite_bundle: SpriteBundle,
     radius: Radius,
     cycle: Cycle,
+    render_layers: RenderLayers,
 }
 
 impl CycleBundle {
@@ -59,6 +67,7 @@ impl CycleBundle {
                 },
                 ..default()
             },
+            render_layers: RenderLayers::layer(LAYER_INACTIVE),
             radius: Radius(64.0),
         }
     }
@@ -79,9 +88,33 @@ enum Collision {
     Rectangle(Rectangle),
 }
 
-fn system_setup(mut commands: Commands, asset_server: ResMut<AssetServer>) {
-    commands.spawn(Camera2dBundle::default());
+fn system_setup_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera2dBundle {
+            camera: Camera {
+                order: LAYER_INACTIVE as isize,
+                clear_color: ClearColorConfig::Custom(Color::Srgba(BLACK)),
+                ..default()
+            },
 
+            ..default()
+        },
+        RenderLayers::layer(LAYER_INACTIVE),
+    ));
+    commands.spawn((
+        Camera2dBundle {
+            camera: Camera {
+                order: LAYER_ACTIVE as isize,
+                clear_color: ClearColorConfig::Custom(Color::Srgba(BLACK)),
+                ..default()
+            },
+            ..default()
+        },
+        RenderLayers::layer(LAYER_ACTIVE),
+    ));
+}
+
+fn system_setup_entities(mut commands: Commands, asset_server: ResMut<AssetServer>) {
     let hand_open_image = asset_server.load::<Image>("hand-open.png");
     let cycle_image = asset_server.load::<Image>("cycle.png");
 
@@ -89,16 +122,18 @@ fn system_setup(mut commands: Commands, asset_server: ResMut<AssetServer>) {
         Hand,
         Progress(0.5),
         Speed(-0.5),
-        Collision::Rectangle(Rectangle::new(32., 32.)),
+        Collision::Rectangle(Rectangle::new(128., 32.)),
         SpriteBundle {
             texture: hand_open_image,
             sprite: Sprite {
                 custom_size: Some(Vec2::splat(64.0)),
+                color: Color::Srgba(GRAY),
                 ..default()
             },
             transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
             ..default()
         },
+        RenderLayers::layer(LAYER_INACTIVE),
     );
 
     commands
@@ -108,7 +143,7 @@ fn system_setup(mut commands: Commands, asset_server: ResMut<AssetServer>) {
         });
 
     commands
-        .spawn(CycleBundle::new(&cycle_image).translation(vec2(128., 0.)))
+        .spawn(CycleBundle::new(&cycle_image).translation(vec2(192., 0.)))
         .with_children(|parent| {
             parent.spawn(hand_bundle.clone());
         });
@@ -127,6 +162,7 @@ fn system_setup(mut commands: Commands, asset_server: ResMut<AssetServer>) {
             transform: Transform::from_translation(Vec3::new(-64., 0., 1.)),
             ..default()
         },
+        RenderLayers::layer(LAYER_INACTIVE),
     ));
 }
 
@@ -139,11 +175,11 @@ fn system_progress(mut query: Query<(&mut Progress, &Speed), With<Active>>, time
     }
 }
 
-fn system_show_collision_gizmos(
+fn debug_show_collision_gizmos(
     mut show: Local<bool>,
     action_input: Res<ActionInput>,
     mut gizmos: Gizmos,
-    query: Query<(&Transform, &Collision)>,
+    query: Query<(&GlobalTransform, &Collision)>,
 ) {
     if action_input.just_pressed(Action::DebugShowCollisions) {
         *show = !*show;
@@ -153,55 +189,40 @@ fn system_show_collision_gizmos(
         return;
     }
     for (transform, collision) in query.iter() {
-        let translation = transform.translation.xy();
-        let rotation = transform.rotation.to_euler(EulerRot::YXZ).2;
+        let translation = transform.translation().xy();
         match collision {
-            Collision::Rectangle(rect) => {
-                gizmos.primitive_2d(rect, translation, rotation, GREEN_600)
-            }
+            Collision::Rectangle(rect) => gizmos.primitive_2d(rect, translation, 0., GREEN_600),
         }
-    }
-}
-
-#[derive(PartialEq, Eq)]
-struct Overlap(Entity, Entity);
-
-impl Overlap {
-    fn new(e1: Entity, e2: Entity) -> Self {
-        if e1 < e2 {
-            Self(e1, e2)
-        } else {
-            Self(e2, e1)
-        }
-    }
-
-    fn overlaps(&self, e1: Entity, e2: Entity) -> bool {
-        let incoming = Overlap::new(e1, e2);
-        self == &incoming
     }
 }
 
 #[derive(Resource, Default)]
-struct CurrentOverlap {
-    overlaps: Vec<Overlap>,
+struct Overlap {
+    overlaps: Vec<(Entity, Entity)>,
 }
 
-impl CurrentOverlap {
-    fn update(&mut self, overlaps: Vec<Overlap>) {
+impl Overlap {
+    fn update(&mut self, overlaps: Vec<(Entity, Entity)>) {
         self.overlaps = overlaps;
+    }
+
+    fn with(&self, entity: Entity) -> Vec<Entity> {
+        self.overlaps
+            .iter()
+            .filter_map(|(e1, e2)| if *e1 == entity { Some(*e2) } else { None })
+            .collect()
     }
 }
 
-fn rectangle_aabb(rect: &Rectangle, transform: &Transform) -> Aabb2d {
-    rect.aabb_2d(
-        transform.translation.truncate(),
-        transform.rotation.to_euler(EulerRot::YXZ).2,
-    )
+fn rectangle_aabb(rect: &Rectangle, transform: &GlobalTransform) -> Aabb2d {
+    let (_, rotation, translation) = transform.to_scale_rotation_translation();
+
+    rect.aabb_2d(translation.truncate(), rotation.to_euler(EulerRot::YXZ).2)
 }
 
 fn system_check_overlap(
-    query: Query<(Entity, &Transform, &Collision)>,
-    mut current_overlap: ResMut<CurrentOverlap>,
+    query: Query<(Entity, &GlobalTransform, &Collision)>,
+    mut current_overlap: ResMut<Overlap>,
 ) {
     let mut overlaps = vec![];
 
@@ -211,7 +232,8 @@ fn system_check_overlap(
                 let aab1 = rectangle_aabb(r1, t1);
                 let aab2 = rectangle_aabb(r2, t2);
                 if aab1.intersects(&aab2) {
-                    overlaps.push(Overlap::new(e1, e2));
+                    overlaps.push((e1, e2));
+                    overlaps.push((e2, e1));
                 }
             }
         }
@@ -222,53 +244,67 @@ fn system_check_overlap(
 
 fn system_grab_toggle(
     mut commands: Commands,
-    current_overlap: Res<CurrentOverlap>,
-    mut query: Query<(Entity, &Transform, Option<&Holding>), (With<Hand>, With<Active>)>,
-    items: Query<(Entity, &Transform), With<Item>>,
+    overlap: Res<Overlap>,
+    active: Query<(Entity, &Speed, Option<&Holding>), (With<Hand>, With<Active>)>,
+    hand_overs: Query<(Entity, &Speed), (With<Hand>, Without<Active>)>,
+    mut items: Query<(Entity, &mut Transform), With<Item>>,
     action_input: Res<ActionInput>,
 ) {
     if !action_input.just_pressed(Action::Grab) {
         return;
     }
 
-    let Some((entity, hand, holding)) = query.iter().next() else {
+    let Ok((entity, Speed(speed), maybe_holding)) = active.get_single() else {
         return;
     };
 
-    if holding.is_some() {
-        commands.entity(entity).remove::<Holding>();
-        return;
-    } else {
-        let hand_aabb = Aabb2d::new(hand.translation.truncate(), Vec2::splat(32.));
+    match maybe_holding {
+        Some(Holding(Some(item))) => {
+            let overlaps = overlap.with(*item);
+            let is_overlapping = overlaps.into_iter().find_map(|e| hand_overs.get(e).ok());
 
-        let item = items.iter().find_map(|(entity, item)| {
-            let item_aab = Aabb2d::new(item.translation.truncate(), Vec2::splat(32.));
-            if hand_aabb.intersects(&item_aab) {
-                Some(entity)
+            if let Some((other, Speed(speed_other))) = is_overlapping {
+                commands.entity(other).insert(Holding(Some(*item)));
+                commands.entity(other).insert(Active);
+                commands
+                    .entity(other)
+                    .insert(Speed(speed_other.abs() * -speed.signum()));
+                commands.entity(*item).set_parent_in_place(other);
+                commands.entity(entity).remove::<Active>();
+                commands.entity(entity).remove::<Holding>();
             } else {
-                None
+                commands.entity(*item).remove_parent_in_place();
+                commands.entity(entity).remove::<Holding>();
             }
-        });
-
-        commands.entity(entity).insert(Holding(item));
+        }
+        Some(_) => {
+            commands.entity(entity).remove::<Holding>();
+        }
+        _ => {
+            if let Some(item) = overlap
+                .with(entity)
+                .into_iter()
+                .find(|e| items.get_mut(*e).is_ok())
+            {
+                commands.entity(item).set_parent_in_place(entity);
+                commands.entity(entity).insert(Holding(Some(item)));
+            } else {
+                commands.entity(entity).insert(Holding(None));
+            }
+        }
     }
 }
 
-fn system_item_in_hand(
-    query: Query<(&Transform, &Holding), (With<Active>, With<Hand>, Without<Item>)>,
-    mut items: Query<&mut Transform, With<Item>>,
-) {
-    for (hand, Holding(held)) in query.iter() {
-        let Some(entity) = held else {
-            continue;
-        };
+fn move_towards_active_hand(query: Query<&Holding>, mut items: Query<(&mut Transform, &Item)>) {
+    let Ok(Holding(Some(item))) = query.get_single() else {
+        return;
+    };
 
-        let Ok(mut item) = items.get_mut(*entity) else {
-            continue;
-        };
+    let Ok((mut transform, _)) = items.get_mut(*item) else {
+        return;
+    };
 
-        item.translation = hand.translation.truncate().extend(item.translation.z);
-    }
+    transform.translation = transform.translation.lerp(Vec3::ZERO, 0.1);
 }
 
 fn on_remove_grab(
@@ -288,6 +324,40 @@ fn on_add_grab(
 ) {
     if let Ok(mut sprite) = query.get_mut(trigger.entity()) {
         *sprite = asset_server.load("hand-closed.png");
+    }
+}
+
+fn system_set_render_layer(
+    mut query: Query<(Entity, &mut RenderLayers), (With<Hand>, With<Active>)>,
+    mut others: Query<&mut RenderLayers, (Or<(With<Item>, With<Hand>)>, Without<Active>)>,
+    overlap: Res<Overlap>,
+) {
+    for (mut render_layers) in &mut others {
+        *render_layers = RenderLayers::layer(LAYER_INACTIVE);
+    }
+
+    if let Ok((entity, mut render_layers)) = query.get_single_mut() {
+        *render_layers = RenderLayers::layer(LAYER_ACTIVE);
+
+        for other in overlap.with(entity) {
+            if let Ok(mut render_layers) = others.get_mut(other) {
+                *render_layers = RenderLayers::layer(LAYER_ACTIVE);
+            }
+        }
+    };
+}
+
+fn system_tint_layers(
+    mut query: Query<(&mut Sprite, &RenderLayers), Or<(With<Hand>, With<Item>)>>,
+) {
+    for (mut sprite, render_layers) in &mut query {
+        if render_layers == &RenderLayers::layer(LAYER_ACTIVE) && sprite.color != TINT_ACTIVE {
+            sprite.color = TINT_ACTIVE;
+        } else if render_layers == &RenderLayers::layer(LAYER_INACTIVE)
+            && sprite.color != TINT_INACTIVE
+        {
+            sprite.color = TINT_INACTIVE;
+        }
     }
 }
 
@@ -329,16 +399,19 @@ fn main() {
             ..default()
         }))
         .add_plugins(InputMappingBundle)
-        .init_resource::<CurrentOverlap>()
-        .add_systems(Startup, system_setup)
+        .init_resource::<Overlap>()
+        .observe(on_add_grab)
+        .observe(on_remove_grab)
+        .add_systems(Startup, system_setup_camera)
+        .add_systems(Startup, system_setup_entities)
         .add_systems(PreUpdate, system_check_overlap)
         .add_systems(Update, system_cycle_hand)
         .add_systems(Update, system_progress)
-        .add_systems(PostUpdate, system_grid_gizmo)
         .add_systems(Update, system_grab_toggle)
-        .add_systems(Update, system_item_in_hand)
-        .add_systems(Update, system_show_collision_gizmos)
-        .observe(on_add_grab)
-        .observe(on_remove_grab)
+        .add_systems(Update, move_towards_active_hand)
+        .add_systems(Update, system_set_render_layer)
+        .add_systems(Update, system_tint_layers)
+        .add_systems(PostUpdate, debug_show_collision_gizmos)
+        .add_systems(PostUpdate, system_grid_gizmo)
         .run();
 }
