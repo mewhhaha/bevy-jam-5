@@ -633,7 +633,7 @@ fn on_finish(
     }
 }
 
-fn system_fade_out_everything(mut query: Query<&mut Sprite, (Without<Item>)>) {
+fn system_fade_out_everything(mut query: Query<&mut Sprite, Without<Item>>) {
     for mut sprite in &mut query {
         let next_alpha = sprite.color.alpha().lerp(0., 0.1);
         sprite.color.set_alpha(next_alpha);
@@ -680,6 +680,14 @@ fn system_show_finish_text(mut commands: Commands) {
         });
 }
 
+fn system_play_finish_sound(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let finish = asset_server.load("finish.mp3");
+    commands.spawn(AudioBundle {
+        source: finish.clone(),
+        ..default()
+    });
+}
+
 pub struct GameBundle;
 
 impl Plugin for GameBundle {
@@ -714,6 +722,7 @@ impl Plugin for GameBundle {
                 system_magnify_baton.run_if(in_state(Game::Finished)),
             )
             .add_systems(OnEnter(Game::Finished), system_show_finish_text)
+            .add_systems(OnEnter(Game::Finished), system_play_finish_sound)
             .add_systems(PostUpdate, system_clean_up_sfx);
     }
 }

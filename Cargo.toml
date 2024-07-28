@@ -16,7 +16,7 @@ opt-level = 1
 opt-level = 3
 
 [dependencies]
-bevy = { version = "0.14", features = ["wav"] }
+bevy = { version = "0.14", features = ["wav", "mp3"] }
 bevy_dylib = "0.14.0"
 log = { version = "*", features = [
     "max_level_debug",
