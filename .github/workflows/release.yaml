@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - '*'
+      - "*"
 
 env:
   # update with the name of the main binary
@@ -15,9 +15,7 @@ env:
   # https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-storage-and-bandwidth-usage
   use_git_lfs: false
 
-
 jobs:
-
   # Build for wasm
   release-wasm:
     runs-on: ubuntu-latest
@@ -28,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: ${{ env.use_git_lfs }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
       - name: install wasm-bindgen-cli
@@ -42,7 +40,7 @@ jobs:
       - name: Prepare package
         run: |
           wasm-bindgen --no-typescript --out-name bevy_game --out-dir wasm --target web target/wasm32-unknown-unknown/release/${{ env.binary }}.wasm
-          cp -r assets wasm/ || true # Try to copy, but ignore if it can't copy if source directory does not exist 
+          cp -r assets wasm/ || true # Try to copy, but ignore if it can't copy if source directory does not exist
 
       - name: Package as a zip
         working-directory: ./wasm
@@ -76,7 +74,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: ${{ env.use_git_lfs }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-unknown-linux-gnu
       - name: install dependencies
@@ -125,7 +123,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: ${{ env.use_git_lfs }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-pc-windows-msvc
 
@@ -171,7 +169,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: ${{ env.use_git_lfs }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-apple-darwin
       - name: Environment Setup
@@ -202,7 +200,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file:  ${{ env.binary }}-macOS-intel.dmg
+          file: ${{ env.binary }}-macOS-intel.dmg
           asset_name: ${{ env.binary }}-macOS-intel-${{ steps.get_version.outputs.tag }}.dmg
           tag: ${{ github.ref }}
           overwrite: true
@@ -217,10 +215,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: ${{ env.use_git_lfs }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: aarch64-apple-darwin
-      - name: Environment 
+      - name: Environment
         # macOS 11 was the first version to support ARM
         run: |
           export MACOSX_DEPLOYMENT_TARGET="11"
