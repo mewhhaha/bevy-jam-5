@@ -2,7 +2,7 @@
 name = "bevy_github_ci_template"
 version = "0.1.0"
 edition = "2021"
-license = "MIT OR Apache-2.0 OR CC0-1.0"
+license = "MIT"
 
 # Compile with Performance Optimizations:
 # https://bevyengine.org/learn/book/getting-started/setup/#compile-with-performance-optimizations
@@ -16,12 +16,16 @@ opt-level = 1
 opt-level = 3
 
 [dependencies]
-bevy = "0.14"
+bevy = { version = "0.14", features = ["wav"] }
 bevy_dylib = "0.14.0"
 log = { version = "*", features = [
     "max_level_debug",
     "release_max_level_warn",
+
 ] }
+
+[features]
+debug = []
 
 # Enable more optimization in the release profile at the cost of compile time.
 [profile.release]
