@@ -288,7 +288,7 @@ fn system_after_images(
     timer.tick(time.delta());
 
     if timer.finished() {
-        let mut color = CYCLE_COLOR[*index].clone();
+        let mut color = CYCLE_COLOR[*index];
         color.set_alpha(0.7);
 
         commands.spawn((
@@ -628,7 +628,7 @@ fn on_finish(
     mut state: ResMut<NextState<Game>>,
     query: Query<&Finish>,
 ) {
-    if let Ok(_) = query.get(trigger.entity()) {
+    if query.get(trigger.entity()).is_ok() {
         state.set(Game::Finished);
     }
 }
